@@ -22,14 +22,17 @@ stages:
       - job: Package_Module
         displayName: 'Package Module'
         pool:
-          vmImage: 'ubuntu 16.04'
+          vmImage: 'ubuntu-latest'
         steps:
-          - task: GitVersion@5
-            name: gitVersion
-            displayName: 'Evaluate Next Version'
-            inputs:
-              runtime: 'core'
-              configFilePath: 'GitVersion.yml'
+          - pwsh: |
+              dotnet tool install --global GitVersion.Tool
+              $gitVersionObject = dotnet-gitversion | ConvertFrom-Json
+              $gitVersionObject.PSObject.Properties.ForEach{
+                  Write-Host -Object "Setting Task Variable '$($_.Name)' with value '$($_.Value)'."
+                  Write-Host -Object "##vso[task.setvariable variable=$($_.Name);]$($_.Value)"
+              }
+              Write-Host -Object "##vso[build.updatebuildnumber]$($gitVersionObject.FullSemVer)"
+            displayName: Calculate ModuleVersion (GitVersion)
 
           - task: PowerShell@2
             name: package
@@ -39,7 +42,7 @@ stages:
               arguments: '-ResolveDependency -tasks pack'
               pwsh: true
             env:
-              ModuleVersion: $(gitVersion.InformationalVersion)
+              ModuleVersion: $(NuGetVersionV2)
 
           - task: PublishBuildArtifacts@1
             displayName: 'Publish Build Artifact'
@@ -70,7 +73,7 @@ stages:
             inputs:
               filePath: './build.ps1'
               arguments: '-Tasks hqrmtest'
-              pwsh: true
+              pwsh: false
           - task: PublishTestResults@2
             displayName: 'Publish Test Results'
             condition: succeededOrFailed()
@@ -131,7 +134,7 @@ stages:
         displayName: 'Publish Codecov.io Code Coverage'
         dependsOn: Test_Unit
         pool:
-          vmImage: 'ubuntu 16.04'
+          vmImage: 'ubuntu-latest'
         timeoutInMinutes: 0
 
         steps:
@@ -183,7 +186,7 @@ stages:
       - job: Deploy_Module
         displayName: 'Deploy Module'
         pool:
-          vmImage: 'ubuntu 16.04'
+          vmImage: 'ubuntu-latest'
         steps:
           - task: DownloadBuildArtifacts@0
             displayName: 'Download Build Artifact'
