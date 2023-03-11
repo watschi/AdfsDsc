@@ -40,8 +40,8 @@ try
 
         # Define Resource Commands
         $ResourceCommand = @{
-            Get       = 'Get-AdfsConfigurationStatus'
-            Install   = 'Install-AdfsFarm'
+            Get     = 'Get-AdfsConfigurationStatus'
+            Install = 'Install-AdfsFarm'
         }
 
         $mockUserName = 'CONTOSO\SvcAccount'
@@ -57,12 +57,15 @@ try
         $sqlConnectionString = 'TBC'
 
         $mockResource = @{
-            FederationServiceName         = 'sts.contoso.com'
-            FederationServiceDisplayName  = 'Contoso ADFS Service'
-            CertificateThumbprint         = '6F7E9F5543505B943FEEA49E651EDDD8D9D45011'
-            SQLConnectionString           = $SQLConnectionString
-            Ensure                        = 'Present'
+            FederationServiceName        = 'sts.contoso.com'
+            FederationServiceDisplayName = 'Contoso ADFS Service'
+            CertificateThumbprint        = '6F7E9F5543505B943FEEA49E651EDDD8D9D45011'
+            SQLConnectionString          = $SQLConnectionString
+            Ensure                       = 'Present'
         }
+
+        $mockSigningCertificateDnsName = "ADFS Signing - $($mockResource.FederationServiceName)"
+        $mockDecryptionCertificateDnsName = "ADFS Encryption - $($mockResource.FederationServiceName)"
 
         $mockGsaResource = $mockResource.Clone()
         $mockGsaResource += @{
@@ -78,7 +81,7 @@ try
 
         $mockAbsentResource = @{
             FederationServiceName         = $mockResource.FederationServiceName
-            CertificateThumbprint         = $mockResource.CertificateThumbprint
+            CertificateThumbprint         = $null
             FederationServiceDisplayName  = $null
             GroupServiceAccountIdentifier = $null
             ServiceAccountCredential      = $null
@@ -105,7 +108,6 @@ try
             BeforeAll {
                 $getTargetResourceParameters = @{
                     FederationServiceName = $mockResource.FederationServiceName
-                    CertificateThumbprint = $mockResource.CertificateThumbprint
                     Credential            = $mockCredential
                 }
 
@@ -136,6 +138,20 @@ try
                     ConfigurationDatabaseConnectionString = $sqlConnectionString
                 }
 
+                $mockGetAdfsCertificateTokenSigningResult = @{
+                    Certificate = @{
+                        subject = "CN=$mockSigningCertificateDnsName"
+                    }
+                    IsPrimary   = $true
+                }
+
+                $mockGetAdfsCertificateTokenDecryptingResult = @{
+                    Certificate = @{
+                        subject = $mockDecryptionCertificateDnsName
+                    }
+                    IsPrimary   = $true
+                }
+
                 $mockExceptionErrorMessage = 'UnknownException'
                 $mockException = New-Object -TypeName 'System.Exception' -ArgumentList $mockExceptionErrorMessage
                 $mockErrorRecord = New-Object -TypeName 'System.Management.Automation.ErrorRecord' `
@@ -155,6 +171,12 @@ try
                     -MockWith { $mockGetCimInstanceSecurityTokenServiceResult }
                 Mock -CommandName Get-AdfsSslCertificate -MockWith { $mockGetAdfsSslCertificateResult }
                 Mock -CommandName Get-AdfsProperties -MockWith { $mockGetAdfsPropertiesResult }
+                Mock -CommandName Get-AdfsCertificate `
+                    -ParameterFilter { $CertificateType -eq 'Token-Signing' } `
+                    -MockWith { $mockGetAdfsCertificateTokenSigningResult }
+                Mock -CommandName Get-AdfsCertificate `
+                    -ParameterFilter { $CertificateType -eq 'Token-Decrypting' } `
+                    -MockWith { $mockGetAdfsCertificateTokenDecryptingResult }
                 Mock -CommandName Assert-GroupServiceAccount -MockWith { $true }
             }
 
@@ -217,6 +239,58 @@ try
                     It 'Should throw the correct exception' {
                         { Get-TargetResource @getTargetResourceParameters } | Should -Throw (
                             $script:localizedData.GettingAdfsSslCertificateErrorMessage -f
+                            $mockResource.FederationServiceName)
+                    }
+                }
+
+                Context "When Get-AdfsCertificate -CertificateType 'Token-Signing' throws an exception" {
+                    BeforeAll {
+                        Mock Get-AdfsCertificate `
+                            -ParameterFilter { $CertificateType -eq 'Token-Signing' } `
+                            -MockWith { throw $mockExceptionErrorMessage }
+                    }
+
+                    It 'Should throw the correct exception' {
+                        { Get-TargetResource @getTargetResourceParameters } | Should -Throw (
+                            $script:localizedData.GettingAdfsTokenSigningCertificateErrorMessage -f
+                            $mockResource.FederationServiceName)
+                    }
+                }
+
+                Context "When Get-AdfsCertificate -CertificateType 'Token-Signing' returns an empty result" {
+                    BeforeAll {
+                        Mock Get-AdfsCertificate -ParameterFilter { $CertificateType -eq 'Token-Signing' }
+                    }
+
+                    It 'Should throw the correct exception' {
+                        { Get-TargetResource @getTargetResourceParameters } | Should -Throw (
+                            $script:localizedData.GettingAdfsTokenSigningCertificateErrorMessage -f
+                            $mockResource.FederationServiceName)
+                    }
+                }
+
+                Context "When Get-AdfsCertificate -CertificateType 'Token-Decrypting' throws an exception" {
+                    BeforeAll {
+                        Mock Get-AdfsCertificate `
+                            -ParameterFilter { $CertificateType -eq 'Token-Decrypting' } `
+                            -MockWith { throw $mockExceptionErrorMessage }
+                    }
+
+                    It 'Should throw the correct exception' {
+                        { Get-TargetResource @getTargetResourceParameters } | Should -Throw (
+                            $script:localizedData.GettingAdfsTokenDecryptingCertificateErrorMessage -f
+                            $mockResource.FederationServiceName)
+                    }
+                }
+
+                Context "When Get-AdfsCertificate -CertificateType 'Token-Decrypting' returns an empty result" {
+                    BeforeAll {
+                        Mock Get-AdfsCertificate -ParameterFilter { $CertificateType -eq 'Token-Decrypting' }
+                    }
+
+                    It 'Should throw the correct exception' {
+                        { Get-TargetResource @getTargetResourceParameters } | Should -Throw (
+                            $script:localizedData.GettingAdfsTokenDecryptingCertificateErrorMessage -f
                             $mockResource.FederationServiceName)
                     }
                 }
@@ -343,8 +417,11 @@ try
 
                 $mockNewCertificateThumbprint = '6F7E9F5543505B943FEEA49E651EDDD8D9D45014'
                 $mockNewFederationServiceDisplayName = 'Fabrikam ADFS Service'
+                $mockCertificateDnsName = $mockResource.FederationServiceName
 
                 Mock -CommandName $ResourceCommand.Install -MockWith { $mockInstallResourceSuccessResult }
+
+                $localMachineCertPath = 'cert:\LocalMachine\My\'
             }
 
             Context 'When both credential parameters have been specified' {
@@ -362,13 +439,67 @@ try
 
             Context 'When neither credential parameters have been specified' {
                 BeforeAll {
-                    $setTargetResourceBothCredentialParameters = $setTargetResourceParameters.Clone()
-                    $setTargetResourceBothCredentialParameters.Remove('GroupServiceAccountIdentifier')
+                    $setTargetResourceNeitherCredentialParameters = $setTargetResourceParameters.Clone()
+                    $setTargetResourceNeitherCredentialParameters.Remove('GroupServiceAccountIdentifier')
                 }
 
                 It 'Should throw the correct error' {
-                    { Set-TargetResource @setTargetResourceBothCredentialParameters } |
+                    { Set-TargetResource @setTargetResourceNeitherCredentialParameters } |
                         Should -Throw ($script:localizedData.ResourceMissingCredentialErrorMessage -f
+                            $mockResource.FederationServiceName)
+                }
+            }
+
+            Context 'When both service certificate parameters have been specified' {
+                BeforeAll {
+                    $setTargetResourceBothServiceCertificateParameters = $setTargetResourceParameters.Clone()
+                    $setTargetResourceBothServiceCertificateParameters.Add('CertificateDnsName', $mockCertificateDnsName)
+                }
+
+                It 'Should throw the correct error' {
+                    { Set-TargetResource @setTargetResourceBothServiceCertificateParameters } |
+                        Should -Throw ($script:localizedData.ResourceDuplicateServiceCertificateErrorMessage -f
+                            $mockResource.FederationServiceName)
+                }
+            }
+
+            Context 'When neither service certificate parameters have been specified' {
+                BeforeAll {
+                    $setTargetResourceNeitherServiceCertificateParameters = $setTargetResourceParameters.Clone()
+                    $setTargetResourceNeitherServiceCertificateParameters.Remove('CertificateThumbprint')
+                }
+
+                It 'Should throw the correct error' {
+                    { Set-TargetResource @setTargetResourceNeitherServiceCertificateParameters } |
+                        Should -Throw ($script:localizedData.ResourceMissingServiceCertificateErrorMessage -f
+                            $mockResource.FederationServiceName)
+                }
+            }
+
+            Context 'When the signing certificate DNS Name but not the decryption certificate DNS name parameter has been specified' {
+                BeforeAll {
+                    $setTargetResourceSigningCertificateDnsNameParameters = $setTargetResourceParameters.Clone()
+                    $setTargetResourceSigningCertificateDnsNameParameters.Add('SigningCertificateDnsName',
+                        $mockSigningCertificateDnsName)
+                }
+
+                It 'Should throw the correct error' {
+                    { Set-TargetResource @setTargetResourceSigningCertificateDnsNameParameters } |
+                        Should -Throw ($script:localizedData.ResourceInvalidSignDecryptCertificateErrorMessage -f
+                            $mockResource.FederationServiceName)
+                }
+            }
+
+            Context 'When the decryption certificate DNS Name but not the signing certificate DNS name parameter has been specified' {
+                BeforeAll {
+                    $setTargetResourceDecryptionCertificateDnsNameParameters = $setTargetResourceParameters.Clone()
+                    $setTargetResourceDecryptionCertificateDnsNameParameters.Add('DecryptionCertificateDnsName',
+                        $mockDecryptionCertificateDnsName)
+                }
+
+                It 'Should throw the correct error' {
+                    { Set-TargetResource @setTargetResourceDecryptionCertificateDnsNameParameters } |
+                        Should -Throw ($script:localizedData.ResourceInvalidSignDecryptCertificateErrorMessage -f
                             $mockResource.FederationServiceName)
                 }
             }
@@ -399,10 +530,139 @@ try
                 It 'Should call the expected mocks' {
                     Assert-MockCalled -CommandName $ResourceCommand.Install `
                         -ParameterFilter {
-                            $FederationServiceName -eq $setTargetResourceParameters.FederationServiceName -and
-                            $AdminConfiguration.($mockAdminConfiguration.Key) -eq $mockAdminConfiguration.Value
-                         } `
+                        $FederationServiceName -eq $setTargetResourceParameters.FederationServiceName -and
+                        $AdminConfiguration.($mockAdminConfiguration.Key) -eq $mockAdminConfiguration.Value
+                    } `
                         -Exactly -Times 1
+                }
+            }
+
+            Context 'When the CertificateDnsName parameter has been specified' {
+                BeforeAll {
+                    $setTargetResourceCertificateDnsNameParameters = $setTargetResourceParameters.Clone()
+                    $setTargetResourceCertificateDnsNameParameters.Add('CertificateDnsName', $mockCertificateDnsName)
+                    $setTargetResourceCertificateDnsNameParameters.Remove('CertificateThumbprint')
+
+                    $mockGetChildItemCertificateDnsNameResult = @{
+                        Thumbprint = '857C8836C1D8217FFFCA0997D0864ED307926C41'
+                    }
+
+                    Mock Get-TargetResource -MockWith { $mockGetTargetResourceAbsentResult }
+
+                    Mock Get-ChildItem `
+                        -ParameterFilter { $Path -eq $localMachineCertPath -and $DnsName -eq $mockCertificateDnsName } `
+                        -MockWith { $mockGetChildItemCertificateDnsNameResult }
+                }
+
+                It 'Should not throw' {
+                    { Set-TargetResource @setTargetResourceCertificateDnsNameParameters } | Should -Not -Throw
+                }
+
+                It 'Should call the expected mocks' {
+                    Assert-MockCalled -CommandName Get-ChildItem `
+                        -ParameterFilter {
+                        $Path -eq $localMachineCertPath -and
+                        $DnsName -eq $mockCertificateDnsName
+                    } `
+                        -Exactly -Times 1
+                    Assert-MockCalled -CommandName $ResourceCommand.Install `
+                        -ParameterFilter {
+                        $FederationServiceName -eq $setTargetResourceParameters.FederationServiceName -and
+                        $CertificateThumbprint -eq $mockGetChildItemCertificateDnsNameResult.Thumbprint
+                    } `
+                        -Exactly -Times 1
+                }
+
+                Context 'When the Certificate can not be found' {
+                    BeforeAll {
+                        Mock Get-ChildItem -ParameterFilter { $Path -eq $localMachineCertPath }
+                    }
+
+                    It 'Should throw the correct error' {
+                        { Set-TargetResource @setTargetResourceCertificateDnsNameParameters } |
+                            Should -Throw ($script:localizedData.CertificateNotFoundErrorMessage -f
+                                $mockCertificateDnsName)
+                    }
+                }
+            }
+
+            Context 'When the SigningCertificateDnsName and DecryptionCertificateDnsName parameters have been specified' {
+                BeforeAll {
+                    $setTargetResourceSignDecryptCertificateDnsNameParameters = $setTargetResourceParameters.Clone()
+                    $setTargetResourceSignDecryptCertificateDnsNameParameters.Add('SigningCertificateDnsName',
+                        $mockSigningCertificateDnsName)
+                    $setTargetResourceSignDecryptCertificateDnsNameParameters.Add('DecryptionCertificateDnsName',
+                        $mockDecryptionCertificateDnsName)
+
+                    $mockGetChildItemSigningCertificateResult = @{
+                        Thumbprint = '857C8836C1D8217FFFCA0997D0864ED307926C41'
+                    }
+
+                    $mockGetChildItemDecryptionCertificateResult = @{
+                        Thumbprint = '7F266BBDCCC94D763E39AF655B7D03EEB83AD4AC'
+                    }
+
+                    Mock Get-TargetResource -MockWith { $mockGetTargetResourceAbsentResult }
+
+                    Mock Get-ChildItem `
+                        -ParameterFilter { $Path -eq $localMachineCertPath -and $DnsName -eq $mockSigningCertificateDnsName } `
+                        -MockWith { $mockGetChildItemSigningCertificateResult }
+
+                    Mock Get-ChildItem `
+                        -ParameterFilter { $Path -eq $localMachineCertPath -and $DnsName -eq $mockDecryptionCertificateDnsName } `
+                        -MockWith { $mockGetChildItemDecryptionCertificateResult }
+                }
+
+                It 'Should not throw' {
+                    { Set-TargetResource @setTargetResourceSignDecryptCertificateDnsNameParameters } | Should -Not -Throw
+                }
+
+                It 'Should call the expected mocks' {
+                    Assert-MockCalled -CommandName Get-ChildItem `
+                        -ParameterFilter {
+                        $Path -eq $localMachineCertPath -and
+                        $DnsName -eq $mockSigningCertificateDnsName
+                    } `
+                        -Exactly -Times 1
+                    Assert-MockCalled -CommandName Get-ChildItem `
+                        -ParameterFilter {
+                        $Path -eq $localMachineCertPath -and
+                        $DnsName -eq $mockDecryptionCertificateDnsName
+                    } `
+                        -Exactly -Times 1
+                    Assert-MockCalled -CommandName $ResourceCommand.Install `
+                        -ParameterFilter {
+                        $FederationServiceName -eq $setTargetResourceParameters.FederationServiceName -and
+                        $SigningCertificateThumbprint -eq $mockGetChildItemSigningCertificateResult.Thumbprint -and
+                        $DecryptionCertificateThumbprint -eq $mockGetChildItemDecryptionCertificateResult.Thumbprint
+                    } `
+                        -Exactly -Times 1
+                }
+
+                Context 'When the Signing Certificate can not be found' {
+                    BeforeAll {
+                        Mock Get-ChildItem `
+                            -ParameterFilter { $Path -eq $localMachineCertPath -and $DnsName -eq $mockSigningCertificateDnsName } `
+                    }
+
+                    It 'Should throw the correct error' {
+                        { Set-TargetResource @setTargetResourceSignDecryptCertificateDnsNameParameters } |
+                            Should -Throw ($script:localizedData.CertificateNotFoundErrorMessage -f
+                                $mockSigningCertificateDnsName)
+                    }
+                }
+
+                Context 'When the Decrypting Certificate can not be found' {
+                    BeforeAll {
+                        Mock Get-ChildItem `
+                            -ParameterFilter { $Path -eq $localMachineCertPath -and $DnsName -eq $mockDecryptionCertificateDnsName } `
+                    }
+
+                    It 'Should throw the correct error' {
+                        { Set-TargetResource @setTargetResourceSignDecryptCertificateDnsNameParameters } |
+                            Should -Throw ($script:localizedData.CertificateNotFoundErrorMessage -f
+                                $mockDecryptionCertificateDnsName)
+                    }
                 }
             }
 
