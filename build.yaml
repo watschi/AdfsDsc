@@ -65,6 +65,7 @@ DscTest:
   ExcludeModuleFile:
   #  - Templates
   #  - Modules/DscResource.Common
+  MainGitBranch: main
 
 Resolve-Dependency: #Parameters for Resolve-Dependency
   #PSDependTarget: ./output/modules
