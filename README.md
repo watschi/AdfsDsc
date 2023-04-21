@@ -18,8 +18,8 @@ This project has adopted this [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Releases
 
-For each merge to the branch `main` a preview release will be deployed to [PowerShell Gallery](https://www.powershellgallery.com/).
-Periodically a release version tag will be pushed which will deploy a full release to [PowerShell Gallery](https://www.powershellgallery.com/).
+For each merge to the branch `main` a preview release will be deployed to [PowerShell Gallery](https://www.powershellgallery.com/packages/AdfsDsc).
+Periodically a release version tag will be pushed which will deploy a full release to [PowerShell Gallery](https://www.powershellgallery.com/packages/AdfsDsc).
 
 ## Documentation and Examples
 
