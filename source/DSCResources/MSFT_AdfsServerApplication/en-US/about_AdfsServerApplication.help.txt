@@ -58,7 +58,7 @@ Configuration AdfsServerApplication_Config
         {
             Name                       = 'ServerApp1'
             ApplicationGroupIdentifier = 'AppGroup1'
-            Identifier                 = 'e7bfb303-c5f6-4028-a360-b6293d41338c'
+            Identifier                 = '6de768af-c656-424d-b79c-5024944c3b67'
             RedirectUri                = 'https://serverapp1.contoso.com'
             Description                = 'App1 Server App'
             ADUserPrincipalName        = 'CONTOSO\Svc.App1'
